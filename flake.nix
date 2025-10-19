@@ -119,6 +119,7 @@
             # These tests require the ability to access a "valid EGL Display", but that won't work
             # inside the Nix sandbox
             "--skip=::egl"
+            "--skip=workspace_auto_back_and_forth_across_monitors"
           ];
 
           postInstall =
