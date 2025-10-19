@@ -302,6 +302,8 @@ pub struct Layout<W: LayoutElement> {
     /// The workspace id does not necessarily point to a valid workspace. If it doesn't, then it is
     /// simply ignored.
     last_active_workspace_id: HashMap<String, WorkspaceId>,
+    /// Previously active workspace
+    previous_workspace_id: Option<WorkspaceId>,
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
     /// Ongoing drag-and-drop operation.
@@ -651,6 +653,7 @@ impl<W: LayoutElement> Layout<W> {
             monitor_set: MonitorSet::NoOutputs { workspaces: vec![] },
             is_active: true,
             last_active_workspace_id: HashMap::new(),
+            previous_workspace_id: None,
             interactive_move: None,
             dnd: None,
             clock,
@@ -676,6 +679,7 @@ impl<W: LayoutElement> Layout<W> {
             monitor_set: MonitorSet::NoOutputs { workspaces },
             is_active: true,
             last_active_workspace_id: HashMap::new(),
+            previous_workspace_id: None,
             interactive_move: None,
             dnd: None,
             clock,
@@ -1492,7 +1496,17 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => {
+                            let previous_workspace_id = mon.active_workspace().id();
+                            mon.switch_workspace(workspace_idx);
+                            if let Some((prev_idx, _)) =
+                                self.find_workspace_by_id(previous_workspace_id)
+                            {
+                                if prev_idx != workspace_idx {
+                                    self.previous_workspace_id = Some(previous_workspace_id);
+                                }
+                            }
+                        }
                     }
 
                     return;
@@ -1528,7 +1542,17 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => {
+                            let previous_workspace_id = mon.active_workspace().id();
+                            mon.switch_workspace(workspace_idx);
+                            if let Some((prev_idx, _)) =
+                                self.find_workspace_by_id(previous_workspace_id)
+                            {
+                                if prev_idx != workspace_idx {
+                                    self.previous_workspace_id = Some(previous_workspace_id);
+                                }
+                            }
+                        }
                     }
 
                     return;
@@ -2141,21 +2165,54 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
+        let previous_workspace_id = monitor.active_workspace().id();
         monitor.switch_workspace(idx);
+        if let Some((prev_idx, _)) = self.find_workspace_by_id(previous_workspace_id) {
+            if prev_idx != idx {
+                self.previous_workspace_id = Some(previous_workspace_id);
+            }
+        }
     }
 
-    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
+    pub fn switch_workspace_auto_back_and_forth(&mut self, id: WorkspaceId) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_auto_back_and_forth(idx);
+
+        // This is the auto back and forth behavior: if we're switching to the active workspace,
+        // instead switch to the previous workspace
+        let mut target_id = id;
+        if monitor.active_workspace().id() == id {
+            if let Some(previous_workspace_id) = self.previous_workspace_id {
+                target_id = previous_workspace_id;
+            }
+        }
+
+        let Some((idx, output)) = self
+            .find_workspace_by_id(target_id)
+            .map(|(idx, ws)| (idx, ws.current_output().unwrap().clone()))
+        else {
+            return;
+        };
+
+        self.focus_output(&output);
+        self.switch_workspace(idx);
     }
 
     pub fn switch_workspace_previous(&mut self) {
-        let Some(monitor) = self.active_monitor() else {
+        let Some(previous_workspace_id) = self.previous_workspace_id else {
             return;
         };
-        monitor.switch_workspace_previous();
+
+        let Some((idx, output)) = self
+            .find_workspace_by_id(previous_workspace_id)
+            .map(|(idx, ws)| (idx, ws.current_output().unwrap().clone()))
+        else {
+            return;
+        };
+
+        self.focus_output(&output);
+        self.switch_workspace(idx);
     }
 
     pub fn consume_into_column(&mut self) {

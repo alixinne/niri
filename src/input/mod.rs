@@ -1341,30 +1341,39 @@ impl State {
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
-                    self.niri.find_output_and_workspace_index(reference)
+                    self.niri.find_output_and_workspace_index(reference.clone())
                 {
-                    if let Some(active) = self.niri.layout.active_output() {
-                        if output.as_ref() == Some(active) {
-                            output = None;
-                        }
-                    }
+                    let config = &self.niri.config;
+                    if config.borrow().input.workspace_auto_back_and_forth {
+                        let workspace_id = self
+                            .niri
+                            .layout
+                            .find_workspace_by_ref(reference)
+                            .unwrap()
+                            .id();
 
-                    if let Some(output) = output {
-                        self.niri.layout.focus_output(&output);
-                        self.niri.layout.switch_workspace(index);
-                        if !self.maybe_warp_cursor_to_focus_centered() {
-                            self.move_cursor_to_output(&output);
-                        }
+                        self.niri
+                            .layout
+                            .switch_workspace_auto_back_and_forth(workspace_id);
                     } else {
-                        let config = &self.niri.config;
-                        if config.borrow().input.workspace_auto_back_and_forth {
-                            self.niri.layout.switch_workspace_auto_back_and_forth(index);
+                        if let Some(active) = self.niri.layout.active_output() {
+                            if output.as_ref() == Some(active) {
+                                output = None;
+                            }
+                        }
+
+                        if let Some(output) = output {
+                            self.niri.layout.focus_output(&output);
+                            self.niri.layout.switch_workspace(index);
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
+                            }
                         } else {
                             self.niri.layout.switch_workspace(index);
+                            self.maybe_warp_cursor_to_focus();
                         }
-                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layer_shell_on_demand_focus = None;
                     }
-                    self.niri.layer_shell_on_demand_focus = None;
 
                     // FIXME: granular
                     self.niri.queue_redraw_all();

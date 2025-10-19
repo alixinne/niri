@@ -65,8 +65,6 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
     pub(super) active_workspace_idx: usize,
-    /// ID of the previously active workspace.
-    pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
     /// Indication where an interactively-moved window is about to be placed.
@@ -333,7 +331,6 @@ impl<W: LayoutElement> Monitor<W> {
             working_area,
             workspaces,
             active_workspace_idx,
-            previous_workspace_id: None,
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
@@ -439,10 +436,6 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         // FIXME: also compute and use current velocity.
         let current_idx = self.workspace_render_idx();
-
-        if self.active_workspace_idx != idx {
-            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
-        }
 
         let prev_active_idx = self.active_workspace_idx;
         self.active_workspace_idx = idx;
@@ -1003,31 +996,8 @@ impl<W: LayoutElement> Monitor<W> {
         self.activate_workspace(new_idx);
     }
 
-    fn previous_workspace_idx(&self) -> Option<usize> {
-        let id = self.previous_workspace_id?;
-        self.workspaces.iter().position(|w| w.id() == id)
-    }
-
     pub fn switch_workspace(&mut self, idx: usize) {
         self.activate_workspace(min(idx, self.workspaces.len() - 1));
-    }
-
-    pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
-        let idx = min(idx, self.workspaces.len() - 1);
-
-        if idx == self.active_workspace_idx {
-            if let Some(prev_idx) = self.previous_workspace_idx() {
-                self.switch_workspace(prev_idx);
-            }
-        } else {
-            self.switch_workspace(idx);
-        }
-    }
-
-    pub fn switch_workspace_previous(&mut self) {
-        if let Some(idx) = self.previous_workspace_idx() {
-            self.switch_workspace(idx);
-        }
     }
 
     pub fn active_window(&self) -> Option<&W> {
@@ -1257,10 +1227,8 @@ impl<W: LayoutElement> Monitor<W> {
             new_idx += 1;
         }
 
-        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
-        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
@@ -1283,10 +1251,8 @@ impl<W: LayoutElement> Monitor<W> {
             new_idx += 1;
         }
 
-        let previous_workspace_id = self.previous_workspace_id;
         self.activate_workspace(new_idx);
         self.workspace_switch = None;
-        self.previous_workspace_id = previous_workspace_id;
 
         self.clean_up_workspaces();
     }
@@ -2020,10 +1986,6 @@ impl<W: LayoutElement> Monitor<W> {
         let new_idx = new_idx.round() as usize;
 
         velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
-
-        if self.active_workspace_idx != new_idx {
-            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
-        }
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(

@@ -1167,8 +1167,24 @@ impl Op {
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
-            Op::FocusWorkspaceAutoBackAndForth(idx) => {
-                layout.switch_workspace_auto_back_and_forth(idx)
+            Op::FocusWorkspaceAutoBackAndForth(ws_name) => {
+                let MonitorSet::Normal { monitors, .. } = &mut layout.monitor_set else {
+                    return;
+                };
+
+                let Some(id) = monitors.iter().find_map(|monitor| {
+                    monitor.workspaces.iter().find_map(|ws| {
+                        if ws.name == Some(format!("ws{ws_name}")) {
+                            Some(ws.id())
+                        } else {
+                            None
+                        }
+                    })
+                }) else {
+                    return;
+                };
+
+                layout.switch_workspace_auto_back_and_forth(id)
             }
             Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
             Op::MoveWindowToWorkspaceDown(focus) => layout.move_to_workspace_down(focus),
@@ -1956,6 +1972,44 @@ fn primary_active_workspace_idx_not_updated_on_output_add() {
     ];
 
     check_ops(ops);
+}
+
+#[test]
+fn workspace_auto_back_and_forth_across_monitors() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::FocusOutput(1),
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_name: None,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddOutput(2),
+        Op::FocusOutput(2),
+        Op::AddNamedWorkspace {
+            ws_name: 2,
+            output_name: None,
+            layout_config: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceAutoBackAndForth(2),
+    ];
+
+    let layout = check_ops(ops);
+
+    if let MonitorSet::Normal {
+        active_monitor_idx, ..
+    } = layout.monitor_set
+    {
+        assert_eq!(active_monitor_idx, 0);
+    } else {
+        unreachable!();
+    }
 }
 
 #[test]
